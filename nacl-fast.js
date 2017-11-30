@@ -2072,6 +2072,100 @@ function crypto_sign_open(m, sm, n, pk) {
   return mlen;
 }
 
+// Note: sm must be n+128.
+function crypto_sign_xeddsa(sm, m, n, sk, rnd) {
+  var h = new Uint8Array(64), r = new Uint8Array(64);
+  var i, j, x = new Float64Array(64);
+  var p = [gf(), gf(), gf(), gf()];
+
+  // Hash separation.
+  sm[0] = 0xfe;
+  for (i = 1; i < 32; i++) sm[i] = 0xff;
+
+  // Secret key.
+  for (i = 0; i < 32; i++) sm[32 + i] = sk[i];
+
+  // Message.
+  for (i = 0; i < n; i++) sm[64 + i] = m[i];
+
+  // Random suffix.
+  for (i = 0; i < 64; i++) sm[n + 64 + i] = rnd[i];
+
+  crypto_hash(r, sm, n+128);
+  reduce(r);
+  scalarbase(p, r);
+  pack(sm, p);
+
+  // replace sk with pk
+  for (i = 0; i < 32; i++) sm[i + 32] = sk[32 + i];
+  crypto_hash(h, sm, n + 64);
+  reduce(h);
+
+  // Wipe out random suffix.
+  for (i = 0; i < 64; i++) sm[n + 64 + i] = 0;
+
+  for (i = 0; i < 64; i++) x[i] = 0;
+  for (i = 0; i < 32; i++) x[i] = r[i];
+  for (i = 0; i < 32; i++) {
+    for (j = 0; j < 32; j++) {
+      x[i+j] += h[i] * sk[j];
+    }
+  }
+
+  modL(sm.subarray(32, n + 64), x);
+
+  return n + 64;
+}
+
+function crypto_sign_curve25519xeddsa(sm, m, n, sk, rnd) {
+  // Convert Curve25519 secret key into Ed25519 secret key (includes pub key).
+  var edsk = new Uint8Array(64);
+  var p = [gf(), gf(), gf(), gf()];
+
+  for (var i = 0; i < 32; i++) edsk[i] = sk[i];
+  // Ensure private key is in the correct format.
+  edsk[0] &= 248;
+  edsk[31] &= 127;
+  edsk[31] |= 64;
+
+  scalarbase(p, edsk);
+  pack(edsk.subarray(32), p);
+
+  // Remember sign bit.
+  var signBit = edsk[63] & 128;
+  var smlen = crypto_sign_xeddsa(sm, m, n, edsk, rnd);
+
+  // Copy sign bit from public key into signature.
+  sm[63] |= signBit;
+  return smlen;
+}
+
+function crypto_sign_curve25519xeddsa_open(m, sm, n, pk) {
+
+  // Convert Curve25519 public key back to Ed25519 public key.
+  // edwardsY = (montgomeryX - 1) / (montgomeryX + 1)
+  var edpk = new Uint8Array(32),
+      x = gf(), a = gf(), b = gf();
+
+  unpack25519(x, pk);
+
+  A(a, x, gf1);
+  Z(b, x, gf1);
+  inv25519(a, a);
+  M(a, a, b);
+
+  pack25519(edpk, a);
+
+  // Restore sign bit from signature.
+  edpk[31] |= sm[63] & 128;
+
+  // Remove sign bit from signature.
+  sm[63] &= 127;
+
+  // Verify signed message.
+  return crypto_sign_open(m, sm, n, edpk);
+}
+
 var crypto_secretbox_KEYBYTES = 32,
     crypto_secretbox_NONCEBYTES = 24,
     crypto_secretbox_ZEROBYTES = 32,
@@ -2113,6 +2207,9 @@ nacl.lowlevel = {
   crypto_sign: crypto_sign,
   crypto_sign_keypair: crypto_sign_keypair,
   crypto_sign_open: crypto_sign_open,
+  crypto_sign_xeddsa: crypto_sign_xeddsa,
+  crypto_sign_curve25519xeddsa: crypto_sign_curve25519xeddsa,
+  crypto_sign_curve25519xeddsa_open: crypto_sign_curve25519xeddsa_open,
 
   crypto_secretbox_KEYBYTES: crypto_secretbox_KEYBYTES,
   crypto_secretbox_NONCEBYTES: crypto_secretbox_NONCEBYTES,

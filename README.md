@@ -9,6 +9,15 @@ to JavaScript for modern browsers and Node.js. Public domain.
 
 Demo: <https://dchest.github.io/tweetnacl-js/>
 
+Additions by @tristan
+=====================
+
+Included some of the functions from https://github.com/wavesplatform/curve25519-js
+needed for [XEdDSA](https://signal.org/docs/specifications/xeddsa/#xeddsa) signatures
+directly into the code of tweetnacl's `naci-fast.js`. Prefered over importing the
+two libraries separately so that improvements to the internal methods in tweetnacl
+that have been copied between the two libraries are easier to pull in.
+
 Documentation
 =============
 
